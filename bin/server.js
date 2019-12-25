@@ -1,15 +1,15 @@
-import path from 'path'
-import React from 'react'
-import { remote } from 'electron'
-import level from 'level'
-import uuid from 'uuid-random'
+#!/usr/bin/env node
 
-export const db = level('db', { valueEncoding: 'json' })
-const express = window.require('express')
-const bodyParser = window.require('body-parser')
+const path = require('path')
+const level = require('level')
+const uuid = require('uuid-random')
+const express = require('express')
+const bodyParser = require('body-parser')
+
+const db = level('db', { valueEncoding: 'json' })
 
 const app = express()
-app.use(express.static(path.join(remote.app.getAppPath(), 'dist')))
+app.use(express.static(path.join('dist')))
 app.use(function (req, res, next) {
   res.header('Access-Control-Allow-Origin', '*')
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept')
@@ -33,6 +33,3 @@ app.get('/symbols', (req, res) => {
     .on('data', data => (acc[data.key] = data.value))
     .on('close', () => res.end(JSON.stringify(acc)))
 })
-
-const Server = () => <h1>Server</h1>
-export default Server

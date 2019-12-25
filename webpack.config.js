@@ -1,5 +1,4 @@
 const path = require('path')
-const { spawn } = require('child_process')
 const HtmlWebpackPlugin = require('html-webpack-plugin')
 
 const hash = 'hash:base64:8'
@@ -39,9 +38,8 @@ const RULES = {
 const rules = () => Object.values(RULES)
 const mode = env => env.production ? 'production' : 'development'
 
-const rendererConfig = (env, argv) => ({
-  context: path.resolve(__dirname, 'src/renderer'),
-  target: 'electron-renderer',
+const webapp = (env, argv) => ({
+  context: path.resolve(__dirname, 'src'),
 
   // In production mode webpack applies internal optimization/minification:
   // no additional plugins necessary.
@@ -60,62 +58,6 @@ const rendererConfig = (env, argv) => ({
   ]
 })
 
-const serverConfig = (env, argv) => ({
-  context: path.resolve(__dirname, 'src/server'),
-  target: 'electron-renderer',
-
-  mode: mode(env),
-  stats: 'errors-only',
-  module: { rules: rules() },
-  entry: {
-    server: ['./index.js']
-  },
-  plugins: [
-    new HtmlWebpackPlugin({
-      filename: 'server.html'
-    })
-  ]
-})
-
-const mainConfig = (env, argv) => ({
-  context: path.resolve(__dirname, 'src/main'),
-  target: 'electron-main',
-  mode: mode(env),
-  stats: 'errors-only',
-  entry: {
-    main: './main.js'
-  },
-  module: {
-    rules: [
-      {
-        test: /\.(png|svg|jpg|gif)$/,
-        use: [
-          'file-loader'
-        ]
-      }
-    ]
-  }
-
-})
-
-const devServer = env => {
-  if (env.production) return ({}) // no development server for production
-  return ({
-    devServer: {
-      contentBase: path.resolve(__dirname, 'dist'),
-      before () {
-        spawn(
-          'electron',
-          ['.'],
-          { shell: true, env: process.env, stdio: 'inherit' }
-        )
-          .on('close', code => process.exit(code))
-          .on('error', error => console.error(error))
-      }
-    }
-  })
-}
-
 const devtool = env => {
   if (env.production) return ({}) // no source maps for production
   return ({
@@ -129,12 +71,9 @@ module.exports = (env, argv) => {
   // Merge development server and devtool to renderer configuration when necessary:
   const renderer = Object.assign(
     {},
-    rendererConfig(env, argv),
-    devServer(env),
+    webapp(env, argv),
     devtool(env)
   )
 
-  const server = serverConfig(env, argv)
-  const main = mainConfig(env, argv)
-  return [renderer, server, main]
+  return [renderer]
 }
