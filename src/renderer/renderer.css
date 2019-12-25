@@ -1,0 +1,69 @@
+body {
+  -moz-user-select: none; /* Firefox */
+  -ms-user-select: none; /* Internet Explorer */
+  -khtml-user-select: none; /* KHTML browsers (e.g. Konqueror) */
+  -webkit-user-select: none; /* Chrome, Safari, and Opera */
+  -webkit-touch-callout: none; /* Disable Android and iOS callouts*/
+
+  font: 14px "Century Gothic", Futura, sans-serif;
+  margin: 20px;
+  touch-action: none;
+
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  position: fixed;
+}
+
+.container {
+  display: grid;
+  grid-template-areas: "title title"
+    "hierarchy hierarchy"
+    "symbol drawing"
+    "sidc buttons";
+    grid-gap: 28px;
+  grid-template-columns: 260px 260px;
+  grid-template-rows: auto auto 200px auto;
+}
+
+.title {
+  grid-area: title;
+}
+
+.hierarchy {
+  grid-area: hierarchy;
+}
+
+.symbol {
+  grid-area: symbol;
+  align-self: center;
+  justify-self: center;
+}
+
+.drawing {
+  grid-area: drawing;
+  border: 1px solid black;
+  border-style: dashed;
+  cursor: crosshair;
+}
+
+.sidc {
+  grid-area: sidc;
+}
+
+.buttons {
+  grid-area: buttons;
+}
+
+.svg {
+  width: 100%;
+  height: 100%;
+}
+
+.path {
+  fill: none;
+  stroke-width: 5px;
+  stroke: black;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
