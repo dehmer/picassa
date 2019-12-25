@@ -1,75 +1,123 @@
 #!/usr/bin/env node
+const { promisify } = require('util')
 const fs = require('fs')
+const { Transform, Writable } = require('stream')
 const { createConverter } = require('convert-svg-to-png')
-const train = require('../data/symbols-train-4.json')
+const level = require('level')
 
 const WIDTH = 260
 const HEIGHT = 200
+const STYLE = 'fill:none; stroke-width:5px; stroke:black; stroke-linejoin:round; stroke-linecap:round;'
 
-const style = 'style="fill:none; stroke-width:5px;stroke:black;stroke-linejoin:round;stroke-linecap:round;"'
+const access = promisify(fs.access)
+const writeFile = promisify(fs.writeFile)
+const db = level('db', { valueEncoding: 'json' })
+const pngPath = (sidc, uuid) => `tmp/png/${sidc}/${uuid}.png`
+const svgPath = (sidc, uuid) => `tmp/svg/${sidc}/${uuid}.svg`
 
 const mkdir = name => {
   if (fs.existsSync(name)) return
   fs.mkdirSync(name)
 }
 
-mkdir('tmp')
-mkdir('tmp/svg')
-mkdir('tmp/png')
 
-Object.keys(train).forEach(key => {
-  const [sidc] = key.split(':')
-  mkdir(`tmp/svg/${sidc}`)
-  mkdir(`tmp/png/${sidc}`)
+/**
+ *
+ */
+const filter = new Transform({
+  objectMode: true,
+  async transform ({ key, value }, _, next) {
+    const [sidc, uuid] = key.split(':')
+    const file = pngPath(sidc, uuid)
+    try {
+      await access(file, fs.constants.F_OK)
+      next() // file already exists, nothing to do.
+    } catch (err) {
+      const { bbox, path } = value
+      this.push({ sidc, uuid, bbox, lines: path })
+      next()
+    }
+  }
 })
 
-Object.entries(train).forEach(([key, value]) => {
-  const [sidc, uuid] = key.split(':')
-  const { bbox } = value
 
-  const cx = bbox.width / 2 + bbox.x
-  const cy = bbox.height / 2 + bbox.y
-  const rx = bbox.width / WIDTH
-  const ry = bbox.height / HEIGHT
-  const s = 1 + (1 - Math.max(rx, ry))
+/**
+ *
+ */
+const normalizedSVG = new Transform({
+  objectMode: true,
+  transform ({ sidc, uuid, bbox, lines }, _, next) {
+    const cx = bbox.width / 2 + bbox.x
+    const cy = bbox.height / 2 + bbox.y
+    const rx = bbox.width / WIDTH
+    const ry = bbox.height / HEIGHT
+    const s = 1 + (1 - Math.max(rx, ry))
 
-  // NOTE: application is right to left
-  const transform = `translate(${WIDTH / 2} ${HEIGHT / 2}) scale(${s}) translate(${-cx} ${-cy}) `
+    // NOTE: application is right to left
+    const transform = `translate(${WIDTH / 2} ${HEIGHT / 2}) scale(${s}) translate(${-cx} ${-cy}) `
 
-  const paths = value.path.map(line => {
-    const [head, ...tail] = line.split(',')
-    const g =
-      `<g ${style} transform="${transform}">` +
-      '<path d="M ' + head + tail.map(tuple => ' L ' + tuple).join('') + `"></path>` +
-      '</g>'
+    const paths = lines.map(line => {
+      const [head, ...tail] = line.split(',')
+      return `<g style="${STYLE}" transform="${transform}">` +
+             '<path d="M ' + head + tail.map(tuple => ' L ' + tuple).join('') + `"></path>` +
+             '</g>'
+    })
 
-    return g
-  })
-
-  const svg = `<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+    const svg =
+`<?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <svg xmlns:svg="http://www.w3.org/2000/svg" xmlns="http://www.w3.org/2000/svg" version="1.1" width="${WIDTH}" height="${HEIGHT}">
   ${paths.join('')}
-</svg>
-  `
+</svg>`
 
-  fs.writeFileSync(`tmp/svg/${sidc}/${uuid}.svg`, svg)
+    this.push({ sidc, uuid, svg })
+    next()
+  }
 })
 
-;(async () => {
-  const converter = createConverter()
-  const queue = Object.keys(train)
-    .map(key => key.split(':'))
-    .filter(([sidc, uuid]) => !fs.existsSync(`tmp/png/${sidc.substring(0, 10)}/${uuid}.png`))
 
-  try {
-    for (const [sidc, uuid] of queue) {
-      const now = Date.now()
-      const inputFilePath = `tmp/svg/${sidc}/${uuid}.svg`
-      const outputFilePath = `tmp/png/${sidc}/${uuid}.png`
-      await converter.convertFile(inputFilePath, { outputFilePath })
-      console.log('converted', inputFilePath, (Date.now() - now), 'ms')
+/**
+ *
+ */
+const svgWriter = new Transform({
+  objectMode: true,
+  async transform ({ sidc, uuid, svg }, _, next) {
+    mkdir(`tmp/svg/${sidc}`)
+
+    try {
+      const file = `tmp/svg/${sidc}/${uuid}.svg`
+      await writeFile(file, svg)
+      this.push({ sidc, uuid })
+      next()
+    } catch (err) {
+      next(err)
     }
-  } finally {
-    await converter.destroy()
   }
-})()
+})
+
+
+/**
+ *
+ */
+const converter = createConverter()
+const pngCreator = new Writable({
+  objectMode: true,
+  async write ({ sidc, uuid }, _, next) {
+    const now = Date.now()
+    const inputFilePath = svgPath(sidc, uuid)
+    const outputFilePath = pngPath(sidc, uuid)
+    await converter.convertFile(inputFilePath, { outputFilePath })
+    console.log('created', outputFilePath, (Date.now() - now), 'ms')
+    next()
+  },
+  async final (next) {
+    await converter.destroy()
+    next()
+  }
+})
+
+
+db.createReadStream({})
+  .pipe(filter)
+  .pipe(normalizedSVG)
+  .pipe(svgWriter)
+  .pipe(pngCreator)
