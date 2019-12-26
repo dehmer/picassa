@@ -6,9 +6,10 @@ const uuid = require('uuid-random')
 const express = require('express')
 const bodyParser = require('body-parser')
 
+const config = require('../config/server.json')
 const db = level('db', { valueEncoding: 'json' })
-
 const app = express()
+
 app.use(express.static(path.join('dist')))
 app.use(function (req, res, next) {
   res.header('Access-Control-Allow-Origin', '*')
@@ -18,7 +19,7 @@ app.use(function (req, res, next) {
 
 app.use(bodyParser.json())
 app.use(bodyParser.urlencoded({ extended: true }))
-app.listen(8002, '192.168.1.199', () => {
+app.listen(config.port || 8002, config.host, () => {
   console.log('server bound.')
 })
 
