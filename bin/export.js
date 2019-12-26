@@ -5,9 +5,7 @@ const { Transform, Writable } = require('stream')
 const { createConverter } = require('convert-svg-to-png')
 const level = require('level')
 
-const WIDTH = 260
-const HEIGHT = 200
-const STYLE = 'fill:none; stroke-width:5px; stroke:black; stroke-linejoin:round; stroke-linecap:round;'
+const SCALE = 0.25 // supported: 1.0, 0.5, 0.25
 
 const access = promisify(fs.access)
 const writeFile = promisify(fs.writeFile)
@@ -44,6 +42,10 @@ const filter = new Transform({
 /**
  *
  */
+const STYLE = 'fill:none; stroke-width:5px; stroke:black; stroke-linejoin:round; stroke-linecap:round;'
+const WIDTH = 260
+const HEIGHT = 200
+
 const normalizedSVG = new Transform({
   objectMode: true,
   transform ({ sidc, uuid, bbox, lines }, _, next) {
@@ -54,7 +56,7 @@ const normalizedSVG = new Transform({
     const s = 1 + (1 - Math.max(rx, ry))
 
     // NOTE: application is right to left
-    const transform = `translate(${WIDTH / 2} ${HEIGHT / 2}) scale(${s}) translate(${-cx} ${-cy}) `
+    const transform = `translate(${WIDTH * SCALE / 2} ${HEIGHT * SCALE / 2}) scale(${SCALE}) scale(${s}) translate(${-cx} ${-cy}) `
 
     const paths = lines.map(line => {
       const [head, ...tail] = line.split(',')
@@ -65,7 +67,7 @@ const normalizedSVG = new Transform({
 
     const svg =
 `<?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<svg xmlns:svg="http://www.w3.org/2000/svg" xmlns="http://www.w3.org/2000/svg" version="1.1" width="${WIDTH}" height="${HEIGHT}">
+<svg xmlns:svg="http://www.w3.org/2000/svg" xmlns="http://www.w3.org/2000/svg" version="1.1" width="${WIDTH * SCALE}" height="${HEIGHT * SCALE}">
   ${paths.join('')}
 </svg>`
 
@@ -78,12 +80,12 @@ const normalizedSVG = new Transform({
 /**
  *
  */
+mkdir('tmp/svg')
 const svgWriter = new Transform({
   objectMode: true,
   async transform ({ sidc, uuid, svg }, _, next) {
-    mkdir(`tmp/svg/${sidc}`)
-
     try {
+      mkdir(`tmp/svg/${sidc}`)
       const file = `tmp/svg/${sidc}/${uuid}.svg`
       await writeFile(file, svg)
       this.push({ sidc, uuid })
@@ -98,6 +100,7 @@ const svgWriter = new Transform({
 /**
  *
  */
+mkdir('tmp/png')
 const converter = createConverter()
 const pngCreator = new Writable({
   objectMode: true,
@@ -105,9 +108,14 @@ const pngCreator = new Writable({
     const now = Date.now()
     const inputFilePath = svgPath(sidc, uuid)
     const outputFilePath = pngPath(sidc, uuid)
-    await converter.convertFile(inputFilePath, { outputFilePath })
-    console.log('created', outputFilePath, (Date.now() - now), 'ms')
-    next()
+    try {
+      mkdir(`tmp/png/${sidc}`)
+      await converter.convertFile(inputFilePath, { outputFilePath })
+      console.log('created', outputFilePath, (Date.now() - now), 'ms')
+      next()
+    } catch (err) {
+      next(err)
+    }
   },
   async final (next) {
     await converter.destroy()
@@ -116,8 +124,10 @@ const pngCreator = new Writable({
 })
 
 
-db.createReadStream({})
+const stream = db.createReadStream({ limit: null })
   .pipe(filter)
   .pipe(normalizedSVG)
   .pipe(svgWriter)
   .pipe(pngCreator)
+
+stream.on('error', err => console.log(err))
