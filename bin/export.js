@@ -5,8 +5,6 @@ const { Transform, Writable } = require('stream')
 const { createConverter } = require('convert-svg-to-png')
 const level = require('level')
 
-const SCALE = 0.25 // supported: 1.0, 0.5, 0.25
-
 const access = promisify(fs.access)
 const writeFile = promisify(fs.writeFile)
 const db = level('db', { valueEncoding: 'json' })
@@ -18,11 +16,13 @@ const mkdir = name => {
   fs.mkdirSync(name)
 }
 
+;['tmp', 'tmp/svg', 'tmp/png'].forEach(mkdir)
+
 
 /**
- *
+ * Only process image data without existing PNG file.
  */
-const filter = new Transform({
+const filter = () => new Transform({
   objectMode: true,
   async transform ({ key, value }, _, next) {
     const [sidc, uuid] = key.split(':')
@@ -42,46 +42,48 @@ const filter = new Transform({
 /**
  *
  */
-const STYLE = 'fill:none; stroke-width:5px; stroke:black; stroke-linejoin:round; stroke-linecap:round;'
-const WIDTH = 260
-const HEIGHT = 200
+const normalizedSVG = () => {
+  const STYLE = 'fill:none; stroke-width:5px; stroke:white; stroke-linejoin:round; stroke-linecap:round;'
+  const WIDTH = 260
+  const HEIGHT = 200
+  const SCALE = 0.25 // supported: 1.0, 0.5, 0.25
 
-const normalizedSVG = new Transform({
-  objectMode: true,
-  transform ({ sidc, uuid, bbox, lines }, _, next) {
-    const cx = bbox.width / 2 + bbox.x
-    const cy = bbox.height / 2 + bbox.y
-    const rx = bbox.width / WIDTH
-    const ry = bbox.height / HEIGHT
-    const s = 1 + (1 - Math.max(rx, ry))
+  return new Transform({
+    objectMode: true,
+    transform ({ sidc, uuid, bbox, lines }, _, next) {
+      const cx = bbox.width / 2 + bbox.x
+      const cy = bbox.height / 2 + bbox.y
+      const rx = bbox.width / WIDTH
+      const ry = bbox.height / HEIGHT
+      const s = 1 + (1 - Math.max(rx, ry))
 
-    // NOTE: application is right to left
-    const transform = `translate(${WIDTH * SCALE / 2} ${HEIGHT * SCALE / 2}) scale(${SCALE}) scale(${s}) translate(${-cx} ${-cy}) `
+      // NOTE: application is right to left
+      const transform = `translate(${WIDTH * SCALE / 2} ${HEIGHT * SCALE / 2}) scale(${SCALE}) scale(${s}) translate(${-cx} ${-cy}) `
 
-    const paths = lines.map(line => {
-      const [head, ...tail] = line.split(',')
-      return `<g style="${STYLE}" transform="${transform}">` +
-             '<path d="M ' + head + tail.map(tuple => ' L ' + tuple).join('') + `"></path>` +
-             '</g>'
-    })
+      const paths = lines.map(line => {
+        const [head, ...tail] = line.split(',')
+        return `<g style="${STYLE}" transform="${transform}">` +
+               '<path d="M ' + head + tail.map(tuple => ' L ' + tuple).join('') + `"></path>` +
+               '</g>'
+      })
 
-    const svg =
-`<?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<svg xmlns:svg="http://www.w3.org/2000/svg" xmlns="http://www.w3.org/2000/svg" version="1.1" width="${WIDTH * SCALE}" height="${HEIGHT * SCALE}">
-  ${paths.join('')}
-</svg>`
+      const svg =
+  `<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+  <svg xmlns:svg="http://www.w3.org/2000/svg" xmlns="http://www.w3.org/2000/svg" version="1.1" width="${WIDTH * SCALE}" height="${HEIGHT * SCALE}">
+    ${paths.join('')}
+  </svg>`
 
-    this.push({ sidc, uuid, svg })
-    next()
-  }
-})
+      this.push({ sidc, uuid, svg })
+      next()
+    }
+  })
+}
 
 
 /**
  *
  */
-mkdir('tmp/svg')
-const svgWriter = new Transform({
+const svgWriter = () => new Transform({
   objectMode: true,
   async transform ({ sidc, uuid, svg }, _, next) {
     try {
@@ -100,34 +102,36 @@ const svgWriter = new Transform({
 /**
  *
  */
-mkdir('tmp/png')
-const converter = createConverter()
-const pngCreator = new Writable({
-  objectMode: true,
-  async write ({ sidc, uuid }, _, next) {
+const pngCreator = () => {
+  const converter = createConverter()
+  const convert = async ({ sidc, uuid }) => {
     const now = Date.now()
     const inputFilePath = svgPath(sidc, uuid)
     const outputFilePath = pngPath(sidc, uuid)
-    try {
-      mkdir(`tmp/png/${sidc}`)
-      await converter.convertFile(inputFilePath, { outputFilePath })
-      console.log('created', outputFilePath, (Date.now() - now), 'ms')
-      next()
-    } catch (err) {
-      next(err)
-    }
-  },
-  async final (next) {
-    await converter.destroy()
-    next()
+    const options = { outputFilePath, background: 'black' }
+    mkdir(`tmp/png/${sidc}`)
+    await converter.convertFile(inputFilePath, options)
+    console.log(`created ${outputFilePath} ${Date.now() - now} ms`)
+    /* undefined */
   }
-})
 
+  return new Writable({
+    objectMode: true,
+    write: (chunk, _, next) => convert(chunk).then(next).catch(next),
+    async final (next) {
+      await converter.destroy()
+      next()
+    }
+  })
+}
 
 const stream = db.createReadStream({ limit: null })
-  .pipe(filter)
-  .pipe(normalizedSVG)
-  .pipe(svgWriter)
-  .pipe(pngCreator)
+  .pipe(filter())
+  .pipe(normalizedSVG())
+  .pipe(svgWriter())
+  .pipe(pngCreator())
 
-stream.on('error', err => console.log(err))
+stream.on('error', err => {
+  console.error(err.message)
+  process.exit(-1)
+})
