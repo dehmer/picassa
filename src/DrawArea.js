@@ -16,23 +16,15 @@ const DrawArea = () => {
 
   const submit = useCallback(event => {
     const { detail } = event
+    const point = point => `${point.get('x')} ${point.get('y')}`
+    const path = lines.map(line => line.map(point).join(','))
+    const clone = bbox => ({ height: bbox.height, width: bbox.width, x: bbox.x, y: bbox.y })
+    const payload = bbox => ({ bbox: clone(bbox), path })
 
-    const payload = lines.map(line =>
-      line.map(point => `${point.get('x')} ${point.get('y')}`).join(',')
-    )
-
-    var xhr = new XMLHttpRequest()
-    xhr.open('POST', `http://192.168.1.199:8002/symbols/${detail.sidc}`, true)
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', `symbols/${detail.sidc}`, true)
     xhr.setRequestHeader('Content-Type', 'application/json')
-    xhr.send(JSON.stringify({
-      bbox: {
-        height: bbox.height,
-        width: bbox.width,
-        x: bbox.x,
-        y: bbox.y
-      },
-      path: payload
-    }))
+    xhr.send(JSON.stringify(payload(bbox)))
     setLines(Immutable.List())
   }, [bbox, lines])
 
@@ -92,10 +84,7 @@ const DrawArea = () => {
     setLines(lines.updateIn([lines.size - 1], line => line.push(point)))
   }
 
-  const bboxChanged = bbox => {
-    setBBox(bbox)
-    console.log('bbox', bbox)
-  }
+  const bboxChanged = bbox => setBBox(bbox)
 
   return (
     <div

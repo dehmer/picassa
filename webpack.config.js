@@ -52,9 +52,7 @@ const webapp = (env, argv) => ({
   },
 
   plugins: [
-    new HtmlWebpackPlugin({
-      title: 'Picassa'
-    })
+    new HtmlWebpackPlugin({ title: 'Picassa' })
   ]
 })
 
