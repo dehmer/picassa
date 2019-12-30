@@ -1,7 +1,7 @@
 ## Webpack web application
 ```
-$ npm install
-$ npm run webpack[:production]
+npm install
+npm run webpack[:production]
 ```
 
 ## Configuration
@@ -17,8 +17,8 @@ $ npm run webpack[:production]
 
 ## Start server
 ```
-$ npm start # or
-$ bin/server.js
+npm start # or
+bin/server.js
 ```
 
 ## Export vector data
