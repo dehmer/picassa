@@ -3,6 +3,11 @@ import Immutable from 'immutable'
 import Drawing from './Drawing'
 import evented from './evented'
 
+const formatPoint = point => `${point.get('x')} ${point.get('y')}`
+const formatPath = lines => lines.map(line => line.map(formatPoint).join(','))
+const cloneBBox = bbox => ({ height: bbox.height, width: bbox.width, x: bbox.x, y: bbox.y })
+const payload = (lines, bbox) => ({ bbox: cloneBBox(bbox), path: formatPath(lines) })
+
 const DrawArea = () => {
   const drawArea = useRef(null)
   const [drawing, setDrawing] = useState(false)
@@ -16,15 +21,10 @@ const DrawArea = () => {
 
   const submit = useCallback(event => {
     const { detail } = event
-    const point = point => `${point.get('x')} ${point.get('y')}`
-    const path = lines.map(line => line.map(point).join(','))
-    const clone = bbox => ({ height: bbox.height, width: bbox.width, x: bbox.x, y: bbox.y })
-    const payload = bbox => ({ bbox: clone(bbox), path })
-
     const xhr = new XMLHttpRequest()
     xhr.open('POST', `symbols/${detail.sidc}`, true)
     xhr.setRequestHeader('Content-Type', 'application/json')
-    xhr.send(JSON.stringify(payload(bbox)))
+    xhr.send(JSON.stringify(payload(lines, bbox)))
     setLines(Immutable.List())
   }, [bbox, lines])
 
@@ -74,17 +74,13 @@ const DrawArea = () => {
     setLines(lines.push(Immutable.List([point])))
   }
 
-  const mouseup = event => {
-    setDrawing(false)
-  }
+  const mouseup = event => setDrawing(false)
 
   const mousemove = event => {
     if (!drawing) return
     const point = relativeCoordinates(event)
     setLines(lines.updateIn([lines.size - 1], line => line.push(point)))
   }
-
-  const bboxChanged = bbox => setBBox(bbox)
 
   return (
     <div
@@ -97,7 +93,7 @@ const DrawArea = () => {
       onTouchMove={ touchmove }
       onTouchEnd={ touchend }
     >
-      <Drawing bboxChanged={ bboxChanged } lines={ lines } />
+      <Drawing bboxChanged={ bbox => setBBox(bbox) } lines={ lines } />
     </div>
   )
 }
