@@ -13,8 +13,8 @@ const app = express()
 app.use(express.static(path.join('dist')))
 app.use(bodyParser.json())
 app.use(bodyParser.urlencoded({ extended: true }))
-app.listen(config.port || 8002, config.host, () => {
-  console.log('server bound.')
+const listener = app.listen(config.port, config.host, () => {
+  console.log('server bound:', listener.address())
 })
 
 app.post('/symbols/:sidc', (req, res) => {
